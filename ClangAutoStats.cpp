@@ -44,7 +44,7 @@ public:
         
         // 不混淆读写方法/系统方法/init前缀方法/set前缀方法/zdd_前缀方法
         string methodName = MD->getNameAsString();
-        if (MD->isPropertyAccessor() || isInSystem(MD) || methodName.find("set") == 0 || methodName.find("init") == 0 || methodName.find("zdd_") == 0) {
+        if (MD->isPropertyAccessor() || isInSystem(MD) || methodName.find("set") == 0 || methodName.find("init") == 0 || MD->isOverriding() ||methodName.find("zdd_") == 0) {
             return false;
         }
         
