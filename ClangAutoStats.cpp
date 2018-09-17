@@ -33,7 +33,7 @@ public:
     bool canObfuscate(ObjCMethodDecl *MD) {
         // 如果该方法是协议方法，不进行混淆
         ObjCInterfaceDecl *ID = MD->getClassInterface();
-        if (!ID) {
+        if (!ID || isInSystem(ID)) {
             return false;
         }
         for (ObjCProtocolDecl *protocol : ID->all_referenced_protocols()) {
