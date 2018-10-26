@@ -19,6 +19,10 @@ using namespace clang::tooling;
 using namespace llvm;
 //Rewriter rewriter;
 int numFunctions = 0;
+
+std::map<string, Selector> selectorMap;
+bool selectorPass = true;
+
 class ExampleVisitor : public RecursiveASTVisitor<ExampleVisitor> {
 private:
     //ASTContext *astContext; // used for getting additional AST info
@@ -44,6 +48,12 @@ public:
         
         // 不混淆读写方法/系统方法/init前缀方法/set前缀方法/zdd_前缀方法
         string methodName = MD->getNameAsString();
+        
+        map<string, Selector>::iterator it;
+        if (selectorMap.find(methodName) != selectorMap.end()) {
+            return false;
+        }
+        
         if (MD->isPropertyAccessor() || isInSystem(MD) || methodName.find("set") == 0 || methodName.find("init") == 0 || MD->isOverriding() ||methodName.find("zdd_") == 0) {
             return false;
         }
@@ -114,6 +124,36 @@ public:
         visitor.TraverseDecl(Context.getTranslationUnitDecl());
     }
 };
+
+class SelectorVisitor : public RecursiveASTVisitor<SelectorVisitor> {
+private:
+    //ASTContext *astContext; // used for getting additional AST info
+    //typedef clang::RecursiveASTVisitor<RewritingVisitor> Base;
+    Rewriter &rewriter;
+public:
+    explicit SelectorVisitor(Rewriter &R)
+    : rewriter{R} // initialize private members
+    {}
+    
+    bool VisitObjCSelectorExpr(ObjCSelectorExpr *selectorExpr) {
+        Selector sel = selectorExpr->getSelector();
+        errs() << "the selector name is:" << sel.getAsString() << "\n";
+        selectorMap.insert({sel.getAsString(), sel});
+        return true;
+    }
+};
+
+class SelectorASTConsumer: public ASTConsumer {
+private:
+    SelectorVisitor visitor;
+public:
+    explicit SelectorASTConsumer(Rewriter &R) : visitor(R) {}
+    
+    virtual void HandleTranslationUnit(ASTContext &Context) {
+        visitor.TraverseDecl(Context.getTranslationUnitDecl());
+    }
+};
+
 class ExampleFrontendAction : public ASTFrontendAction {
     
 private:
@@ -122,7 +162,11 @@ public:
     virtual unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) {
         rewriter.setSourceMgr(CI.getSourceManager(), CI.getLangOpts());
         CI.getPreprocessor();
-        return make_unique<ExampleASTConsumer>(rewriter);
+        if (selectorPass == true) {
+            return make_unique<SelectorASTConsumer>(rewriter);
+        } else {
+            return make_unique<ExampleASTConsumer>(rewriter);
+        }
     }
     
     void EndSourceFileAction() override {
@@ -212,17 +256,16 @@ int main(int argc, const char **argv) {
             commands.push_back(string(argv[i]));
         }
     }
-    //getFilesInDir("/Users/tongleiming/Documents/develop/xxxxx", commands, false);
-    //getFilesInDir("/Users/tongleiming/Documents/develop/xxxxx", commands, false);
-//    commands.push_back("/Users/tongleiming/Documents/test/RewriteDir/Hello1.m");
-//    commands.push_back("/Users/tongleiming/Documents/test/RewriteDir/Hello2.m");
-//    commands.push_back("/Users/tongleiming/Documents/test/RewriteDir/Hello1.h");
-    
     
     ClangTool Tool(op.getCompilations(), commands);
     
-    // run the Clang Tool, creating a new FrontendAction (explained below)
+    // 搜集selector阶段
+    selectorPass = true;
     int result = Tool.run(newFrontendActionFactory<ExampleFrontendAction>().get());
+    
+    // 替换函数名阶段
+    selectorPass = false;
+    result = Tool.run(newFrontendActionFactory<ExampleFrontendAction>().get());
     
     errs() << "\nFound " << numFunctions << " functions.\n\n";
     return result;
